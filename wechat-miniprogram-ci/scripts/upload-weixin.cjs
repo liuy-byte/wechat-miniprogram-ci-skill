@@ -27,6 +27,7 @@ const HELP = `微信小程序代码上传（默认仅预检）
   --robot <1-30>           CI 机器人编号，默认 1
   --upload                 执行真实上传；不传时仅预检
   --confirm-appid <AppID>  真实上传时必需，必须与产物 AppID 一致
+  --bump <patch|minor|major>  仅在 --upload 成功后把 package.json.version 升到下一版（不改 manifest、不提交）
   --help                   显示帮助
 
 环境变量：
@@ -48,6 +49,51 @@ function warn(message) {
   console.warn(`警告：${message}`)
 }
 
+// 计算下一个语义化版本号。
+// 输入：current 形如 "1.0.1" 的 semver 字符串；level 为 "patch" | "minor" | "major"。
+// 返回：递增后的版本字符串（如 patch 升级 "1.0.1" → "1.0.2"）。
+// 约束：
+//   - 只处理 MAJOR.MINOR.PATCH 三段纯数字格式；不规范格式（如 "1.0"、"1.0.0-beta"）通过 fail() 拒绝，
+//     避免把语义不清的版本擅自"猜"成某个数字（对齐 SKILL.md "不得根据改动自动猜测版本号"）。
+//   - 遵循 semver 进位：minor+1 时 patch 归零；major+1 时 minor 与 patch 均归零。
+//   - 结果不得为 "0.0.0"（CI 已禁止该版本）。
+function bumpVersion(current, level) {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(current).trim())
+  if (!match) {
+    fail(`package.json.version "${current}" 不是标准 x.y.z 格式，拒绝自动升级；请手动指定版本`)
+  }
+  let major = Number(match[1])
+  let minor = Number(match[2])
+  let patch = Number(match[3])
+  if (level === 'major') {
+    major += 1
+    minor = 0
+    patch = 0
+  } else if (level === 'minor') {
+    minor += 1
+    patch = 0
+  } else {
+    patch += 1
+  }
+  const next = `${major}.${minor}.${patch}`
+  if (next === '0.0.0') {
+    fail('自动升级结果为 0.0.0，已拒绝；请检查 package.json.version')
+  }
+  return next
+}
+
+// 把新版本号写回 package.json（保留缩进与末尾换行，尽量减少 diff 噪声）。
+// 只改 version 一处，其余字段与格式原样保留。
+function writePackageVersion(packagePath, rawText, currentVersion, nextVersion) {
+  // 用精确匹配当前 version 值的定点替换，避免误伤其它字段里出现的相同字符串。
+  const pattern = new RegExp(`("version"\\s*:\\s*)"${currentVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`)
+  if (!pattern.test(rawText)) {
+    fail(`无法在 package.json 中定位 version 字段（当前值 ${currentVersion}），已跳过自动升级`)
+  }
+  const nextText = rawText.replace(pattern, `$1"${nextVersion}"`)
+  fs.writeFileSync(packagePath, nextText)
+}
+
 function parseArgs(argv) {
   const booleanFlags = new Set(['--build', '--upload', '--help'])
   const knownValueFlags = new Set([
@@ -59,7 +105,8 @@ function parseArgs(argv) {
     '--output',
     '--appid',
     '--robot',
-    '--confirm-appid'
+    '--confirm-appid',
+    '--bump'
   ])
   const result = {}
 
@@ -238,11 +285,23 @@ async function main() {
   if (!fs.existsSync(projectPackagePath)) {
     fail('项目目录缺少 package.json')
   }
+  const projectPackageRaw = fs.readFileSync(projectPackagePath, 'utf8')
   const projectPackage = readJson(projectPackagePath, '项目 package.json')
   const version = args.version || process.env.WX_MINIPROGRAM_VERSION || projectPackage.version
   const desc = args.desc || process.env.WX_MINIPROGRAM_DESC || projectPackage.description
   if (args.build && !projectPackage.scripts?.[buildScript]) {
     fail(`package.json 中不存在构建脚本 ${buildScript}`)
+  }
+
+  // --bump 仅在真实上传成功后生效；此处只校验取值合法性，不提前改文件。
+  const bumpLevel = args.bump
+  if (bumpLevel !== undefined) {
+    if (!['patch', 'minor', 'major'].includes(bumpLevel)) {
+      fail('--bump 取值必须是 patch、minor 或 major')
+    }
+    if (!args.upload) {
+      warn('--bump 仅在 --upload 成功后生效；当前为预检模式，不会改动 package.json')
+    }
   }
 
   if (!version || version.trim() === '' || version === '0.0.0') {
@@ -329,6 +388,15 @@ async function main() {
         console.log(`包体 ${item.name}：${(item.size / 1024).toFixed(2)} KiB`)
       }
     }
+  }
+
+  // 上传成功后按 --bump 把 package.json.version 推进到下一版，方便下次发版。
+  // 只改文件、不做 git commit —— 是否提交由使用者自行决定。
+  if (bumpLevel !== undefined) {
+    const nextVersion = bumpVersion(projectPackage.version, bumpLevel)
+    writePackageVersion(projectPackagePath, projectPackageRaw, projectPackage.version, nextVersion)
+    console.log(`\n已升级 package.json.version：${projectPackage.version} → ${nextVersion}（${bumpLevel}）`)
+    console.log('提示：manifest.json 未同步，如需一致请手动更新；改动尚未提交，请自行 git commit。')
   }
 }
 

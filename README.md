@@ -71,6 +71,7 @@ CI=1 npm ci
 - “上传这个微信小程序的体验版代码，版本号是 `1.4.0`，描述是‘优化护理记录提交流程’。”
 - “排查 `miniprogram-ci` 上传失败，先不要重新上传。”
 - “为这个 uni-app 项目配置微信小程序 CI，只上传代码，不提审和发布。”
+- “上传体验版代码，成功后把 `package.json` 版本号升一个 patch。”
 
 Skill 会先执行预检并展示项目、AppID、版本、描述、机器人、产物目录和依赖版本。请核对 AppID；只有明确确认后才会执行真实上传。
 
@@ -125,6 +126,8 @@ node scripts/upload-weixin.cjs --help
 
 当目标项目提供可执行的 `bin/upload-weixin.local.sh` 时，Agent 工作流会优先使用该本地包装脚本并原样传参；包装脚本不属于本仓库，且不应读取、展示或复制其中的密钥配置。
 
+本仓库在 [`examples/upload-weixin.local.sh`](examples/upload-weixin.local.sh) 提供了一份通用 wrapper 模板：它用环境变量兜底、相对定位项目根，不写死任何绝对路径。复制到目标项目 `bin/` 下，按模板内两处“需要修改”注释填好 Skill 目录、仓库外密钥路径与 AppID 即可使用。
+
 ## 配置说明
 
 参数优先级为：命令行参数 > 环境变量 > 目标项目 `package.json`。
@@ -139,8 +142,29 @@ node scripts/upload-weixin.cjs --help
 | 机器人编号 | `--robot` | `WX_MINIPROGRAM_ROBOT` | `1`，允许 `1` 至 `30` |
 | 构建脚本 | `--build-script` | — | `build:mp-weixin` |
 | 产物目录 | `--output` | — | `dist/build/mp-weixin`，必须位于项目内 |
+| 自动升版本号 | `--bump` | — | 无（默认不升）；取值 `patch`/`minor`/`major` |
 
 不要把密钥正文或真实密钥文件提交到仓库，也不要写入 `.env`、JSON、YAML、命令输出或上传描述。CI 流水线应将密钥保存在加密 Secret 中，运行时写入权限最小的临时文件，仅传递该文件路径，并在任务结束后删除。
+
+## 自动升版本号（可选）
+
+发布后为下一版预留新版本号时，可在上传命令追加 `--bump patch|minor|major`。设计取向如下：
+
+- **默认关闭**：不传 `--bump` 时脚本行为完全不变；只有显式指定级别才会升级，脚本不替你决定该升 patch 还是 minor/major。
+- **仅上传成功后生效**：`--bump` 只在 `--upload` 成功后执行；预检失败、AppID 不匹配或上传报错都不会改动 `package.json`。预检模式（不带 `--upload`）传 `--bump` 只给出提示、不改文件。
+- **只改 `package.json` 一处**：脚本消费的上传版本号来自 `--version` > `WX_MINIPROGRAM_VERSION` > `package.json.version`，`manifest.json` 的 `versionName`/`versionCode` 不参与上传标记。为避免误改带注释的 `manifest.json`，`--bump` 只更新 `package.json.version`；uni-app 项目若需 `manifest.json` 与之一致，请自行同步。
+- **只改文件、不提交**：升级后的 `package.json` 留在工作区，是否 `git commit` 由你决定。
+- **遵循 semver 进位**：`minor` 升级时 `patch` 归零，`major` 升级时 `minor`、`patch` 均归零；非 `x.y.z` 三段数字格式一律拒绝。
+
+```bash
+node scripts/upload-weixin.cjs \
+  --project /path/to/uni-app-project \
+  --robot 1 \
+  --upload \
+  --confirm-appid wx0123456789abcdef \
+  --bump patch
+# 上传成功后 package.json.version 由 1.4.0 升到 1.4.1，留在工作区等你提交。
+```
 
 ## 验证
 

@@ -44,6 +44,18 @@ node scripts/upload-weixin.cjs \
 ```
 
 11. 报告上传结果、版本和包体积。不得把“上传成功”表述为“已提审”或“已发布”。
+12. 用户要求上传后自动推进版本号时，才追加 `--bump patch|minor|major`；仅在 `--upload` 成功后生效，把 `package.json.version` 升到下一版。不得默认启用，不得替用户决定升级级别（patch/minor/major 由用户指定）。该操作只改 `package.json` 一处（不动 `manifest.json`），且只改文件不自动提交，改动是否提交由用户决定。
+
+```bash
+node scripts/upload-weixin.cjs \
+  --project /path/to/uni-app-project \
+  --version "<已确认版本>" \
+  --desc "<预检使用的同一描述>" \
+  --robot 1 \
+  --upload \
+  --confirm-appid "<预检得到的 AppID>" \
+  --bump patch
+```
 
 ## 安全门禁
 
@@ -52,6 +64,7 @@ node scripts/upload-weixin.cjs \
 - 密钥位于 Git 工作树内时，要求其已被忽略且未被跟踪；优先使用仓库外密钥。
 - 不得从 `manifest.json` 推断版本号。
 - 不得在未确认 AppID 时增加 `--upload`。
+- 不得默认启用 `--bump`，也不得替用户决定升级级别；`--bump` 只改 `package.json`、不自动提交。
 - 上传失败时保留原始错误并定位密钥、IP 白名单、AppID、产物、代理和证书链；不得无诊断连续重试。
 - 遇到 `unable to get local issuer certificate` 时优先核对实际 Node 版本并使用系统 CA；不得设置 `NODE_TLS_REJECT_UNAUTHORIZED=0`。
 
