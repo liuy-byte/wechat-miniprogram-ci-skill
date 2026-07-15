@@ -1,0 +1,4 @@
+interface:
+  display_name: "微信小程序 CI"
+  short_description: "安全检查、构建并上传 uni-app 微信小程序代码"
+  default_prompt: "使用 $wechat-miniprogram-ci 预检、构建并上传当前 uni-app 微信小程序。"
