@@ -1,0 +1,26 @@
+{
+  "name": "wechat-miniprogram-ci-skill",
+  "version": "1.0.0",
+  "description": "使用微信官方 miniprogram-ci 安全构建并上传 uni-app 微信小程序的 Agent Skill",
+  "private": true,
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": "^18.17.0 || >=20.5.0"
+  },
+  "dependencies": {
+    "miniprogram-ci": "2.1.31"
+  },
+  "overrides": {
+    "miniprogram-ci": {
+      "minimatch": "3.1.5",
+      "readdir-glob": {
+        "minimatch": "5.1.9"
+      },
+      "terser": "4.8.1",
+      "request": {
+        "form-data": "2.5.6",
+        "qs": "6.15.3"
+      }
+    }
+  }
+}
